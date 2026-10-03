@@ -12,7 +12,7 @@ jobs:
 
     steps:
       - name: Lấy mã nguồn
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Cài đặt Java
         uses: actions/setup-java@v5
