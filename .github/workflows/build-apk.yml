@@ -25,10 +25,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Build APK
+      - name: Cài đặt Buildozer
         run: |
-          buildozer -v android debug
-          pip install buildozer cython==0.29.36
+          python -m pip install --upgrade pip
+          pip install buildozer cython==0.29.36 
       - name: Cài đặt thư viện hệ thống
         run: |
           sudo apt update
