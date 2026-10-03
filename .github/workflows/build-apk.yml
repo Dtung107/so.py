@@ -28,7 +28,7 @@ jobs:
       - name: Cài đặt Buildozer
         run: |
           python -m pip install --upgrade pip
-          pip install buildozer cython
+          pip install buildozer cython==0.29.34
 
       - name: Cài đặt thư viện hệ thống
         run: |
