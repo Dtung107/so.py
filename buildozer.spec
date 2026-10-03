@@ -1,11 +1,10 @@
 [app]
 
 # Tên ứng dụng
-title = So Xo Game
+title = Random 00-99
 
 # Tên package
-package.name = soxogame
-
+package.name = random0099
 # Tên miền package
 package.domain = org.example
 
@@ -19,8 +18,8 @@ source.include_exts = py,png,jpg,jpeg,kv,wav,mp3
 version = 1.0
 
 # Thư viện Python cần thiết
-requirements = python3,kivy
 
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy
 # Hướng màn hình
 orientation = portrait
 
