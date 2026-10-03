@@ -28,7 +28,7 @@ jobs:
       - name: Build APK
         run: |
           buildozer -v android debug
-        
+          pip install buildozer cython==0.29.36
       - name: Cài đặt thư viện hệ thống
         run: |
           sudo apt update
