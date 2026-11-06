@@ -8,6 +8,47 @@
 
 export const GEMINI_API_KEY_STORAGE = 'pydroid_gemini_api_key';
 
+/**
+ * Danh sách model thử lần lượt. Nếu model đầu không còn (lỗi 404 / "no longer available")
+ * thì tự động thử model kế tiếp. Có thể đổi/thêm tên model ở đây khi Google ngừng model cũ.
+ */
+const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-flash'];
+
+type GeminiResult = { ok: boolean; status: number; data: any; model: string };
+
+async function geminiGenerate(apiKey: string, body: unknown): Promise<GeminiResult> {
+  let last: GeminiResult = { ok: false, status: 0, data: {}, model: '' };
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    last = { ok: res.ok, status: res.status, data, model };
+    if (res.ok) return last;
+
+    const msg = String(data?.error?.message || '').toLowerCase();
+    const modelUnavailable =
+      res.status === 404 ||
+      msg.includes('no longer available') ||
+      msg.includes('is not found') ||
+      msg.includes('not supported for generatecontent');
+    if (!modelUnavailable) return last; // lỗi khác (khóa sai, hết hạn mức...) thì dừng luôn
+  }
+  return last;
+}
+
+function extractText(data: any): string {
+  const parts = data?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts
+    .filter((p: any) => typeof p?.text === 'string' && !p?.thought)
+    .map((p: any) => p.text)
+    .join('');
+}
+
 export function getStoredApiKey(): string {
   try {
     return localStorage.getItem(GEMINI_API_KEY_STORAGE) || '';
@@ -43,35 +84,23 @@ export async function testGeminiApiKey(apiKey: string): Promise<{ ok: boolean; m
   }
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(clean)}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: 'Ping' }],
-          },
-        ],
-        generationConfig: {
-          maxOutputTokens: 5,
-        },
-      }),
+    const r = await geminiGenerate(clean, {
+      contents: [{ parts: [{ text: 'Ping' }] }],
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      const errMsg = data.error?.message || `Lỗi HTTP ${res.status}: ${res.statusText}`;
-      if (res.status === 400 || errMsg.toLowerCase().includes('api_key_invalid') || errMsg.toLowerCase().includes('key not valid')) {
+    if (!r.ok) {
+      const errMsg = r.data?.error?.message || `Lỗi HTTP ${r.status}`;
+      const low = String(errMsg).toLowerCase();
+      if (low.includes('api_key_invalid') || low.includes('key not valid')) {
         return { ok: false, message: 'Khóa API không hợp lệ. Vui lòng kiểm tra lại mã khóa từ Google AI Studio.' };
       }
-      return { ok: false, message: `Lỗi kết nối Gemini: ${errMsg}` };
+      return { ok: false, message: `Lỗi kết nối Gemini (${r.model || 'không rõ model'}, mã ${r.status}): ${errMsg}` };
     }
 
     return {
       ok: true,
-      message: 'Kết nối thành công! Khóa API Gemini 2.5 Flash hợp lệ và sẵn sàng sử dụng trên APK.',
-      model: 'gemini-2.5-flash',
+      message: `Kết nối thành công! Khóa API hợp lệ, đang dùng model ${r.model}.`,
+      model: r.model,
     };
   } catch (err: any) {
     return {
@@ -92,8 +121,6 @@ export async function sendGeminiChat(
 
   // If user provided a key, call Google Gemini directly (Works in APK standalone!)
   if (apiKey) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
-    
     const formattedContents = messages.map((m) => ({
       role: m.role === 'model' ? 'model' : 'user',
       parts: [{ text: m.content }],
@@ -106,30 +133,22 @@ export async function sendGeminiChat(
       });
     }
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [
-            {
-              text: 'Bạn là Pydroid AI Assistant - Trợ lý gia sư lập trình Python chuyên nghiệp cho người dùng trên điện thoại di động Android. Trả lời bằng tiếng Việt thân thiện, súc tích, giải thích rõ ràng và cung cấp mã nguồn Python chuẩn PEP 8.',
-            },
-          ],
-        },
-        contents: formattedContents,
-        generationConfig: {
-          temperature: 0.7,
-        },
-      }),
+    const r = await geminiGenerate(apiKey, {
+      systemInstruction: {
+        parts: [
+          {
+            text: 'Bạn là Pydroid AI Assistant - Trợ lý gia sư lập trình Python chuyên nghiệp cho người dùng trên điện thoại di động Android. Trả lời bằng tiếng Việt thân thiện, súc tích, giải thích rõ ràng và cung cấp mã nguồn Python chuẩn PEP 8.',
+          },
+        ],
+      },
+      contents: formattedContents,
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error?.message || `Lỗi Gemini API: ${res.status}`);
+    if (!r.ok) {
+      throw new Error(r.data?.error?.message || `Lỗi Gemini API: ${r.status}`);
     }
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const text = extractText(r.data);
     if (!text) {
       throw new Error('Gemini không phản hồi văn bản.');
     }
@@ -159,8 +178,6 @@ export async function sendGeminiDebug(code: string, errorText: string): Promise<
   const apiKey = getStoredApiKey();
 
   if (apiKey) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
-    
     const prompt = `Phân tích lỗi Python sau và sửa mã nguồn hoàn chỉnh:
 MÃ PYTHON:
 \`\`\`python
@@ -180,24 +197,18 @@ Yêu cầu trả về đúng định dạng JSON:
   "diffExplanation": "Giải thích ngắn các điểm đã sửa"
 }`;
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.2,
-        },
-      }),
+    const r = await geminiGenerate(apiKey, {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error?.message || `Lỗi Gemini API: ${res.status}`);
+    if (!r.ok) {
+      throw new Error(r.data?.error?.message || `Lỗi Gemini API: ${r.status}`);
     }
 
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const rawText = extractText(r.data);
     if (!rawText) throw new Error('Không nhận được dữ liệu phân tích từ Gemini.');
     return JSON.parse(rawText);
   }
@@ -223,8 +234,6 @@ export async function sendGeminiLessons(topic: string, level: string = 'cơ bả
   const apiKey = getStoredApiKey();
 
   if (apiKey) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
-    
     const prompt = `Tạo danh sách 3 bài tập lập trình Python về chủ đề "${topic}" với cấp độ "${level}".
 Trả về đúng định dạng JSON danh sách mảng:
 [
@@ -240,24 +249,18 @@ Trả về đúng định dạng JSON danh sách mảng:
   }
 ]`;
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.4,
-        },
-      }),
+    const r = await geminiGenerate(apiKey, {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error?.message || `Lỗi Gemini API: ${res.status}`);
+    if (!r.ok) {
+      throw new Error(r.data?.error?.message || `Lỗi Gemini API: ${r.status}`);
     }
 
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const rawText = extractText(r.data);
     if (!rawText) throw new Error('Không nhận được phản hồi bài tập từ Gemini.');
     return JSON.parse(rawText);
   }
