@@ -16,26 +16,41 @@ const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-flash
 
 type GeminiResult = { ok: boolean; status: number; data: any; model: string };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function geminiGenerate(apiKey: string, body: unknown): Promise<GeminiResult> {
   let last: GeminiResult = { ok: false, status: 0, data: {}, model: '' };
   for (const model of GEMINI_MODELS) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({}));
-    last = { ok: res.ok, status: res.status, data, model };
-    if (res.ok) return last;
 
-    const msg = String(data?.error?.message || '').toLowerCase();
-    const modelUnavailable =
-      res.status === 404 ||
+    // Mỗi model thử tối đa 2 lần (lần 2 chỉ khi máy chủ Google đang quá tải)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      last = { ok: res.ok, status: res.status, data, model };
+      if (res.ok) return last;
+
+      const overloaded = [500, 502, 503, 504].includes(res.status);
+      if (overloaded && attempt === 0) {
+        await sleep(1500);
+        continue;
+      }
+      break;
+    }
+
+    const msg = String(last.data?.error?.message || '').toLowerCase();
+    const tryNextModel =
+      last.status === 404 || // model không còn
+      last.status === 429 || // hết hạn mức của riêng model này
+      [500, 502, 503, 504].includes(last.status) || // model đang quá tải
       msg.includes('no longer available') ||
       msg.includes('is not found') ||
       msg.includes('not supported for generatecontent');
-    if (!modelUnavailable) return last; // lỗi khác (khóa sai, hết hạn mức...) thì dừng luôn
+    if (!tryNextModel) return last; // lỗi khác (khóa sai...) thì dừng luôn
   }
   return last;
 }
