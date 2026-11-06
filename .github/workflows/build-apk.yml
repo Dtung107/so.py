@@ -65,7 +65,7 @@ jobs:
         run: |
           cd android
           chmod +x ./gradlew || true
-          ./gradlew assembleDebug --no-daemon --console=plain --stacktrace
+          ./gradlew assembleDebug --no-daemon --console=plain --stacktrace -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
 
       - name: 📋 Verify and Prepare APK Artifact
         run: |
