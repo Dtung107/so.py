@@ -17,7 +17,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Giao diện thống nhất trên mọi phiên bản Android: tự chừa chỗ cho thanh trạng thái
+        // Chừa chỗ cho thanh trạng thái / thanh điều hướng, còn bàn phím để hệ thống tự xử lý
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
         View content = findViewById(android.R.id.content);
@@ -26,9 +26,16 @@ public class MainActivity extends BridgeActivity {
         ViewCompat.setOnApplyWindowInsetsListener(content, (v, insets) -> {
             Insets bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
-            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-            v.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
-            return WindowInsetsCompat.CONSUMED;
+            boolean keyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
+
+            // Khi bàn phím mở thì KHÔNG cộng thêm phần đệm bên dưới (tránh trừ chiều cao hai lần)
+            v.setPadding(bars.left, bars.top, bars.right, keyboardVisible ? 0 : bars.bottom);
+
+            // Giữ nguyên thông tin bàn phím cho hệ thống, chỉ bỏ phần thanh hệ thống đã xử lý
+            return new WindowInsetsCompat.Builder(insets)
+                .setInsets(WindowInsetsCompat.Type.systemBars(), Insets.NONE)
+                .setInsets(WindowInsetsCompat.Type.displayCutout(), Insets.NONE)
+                .build();
         });
 
         // Biểu tượng pin/sóng màu sáng để nhìn rõ trên nền tối
