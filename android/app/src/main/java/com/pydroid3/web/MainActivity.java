@@ -157,7 +157,11 @@ public class MainActivity extends BridgeActivity {
         // Ensure Android system bars (status bar, clock, notch, navigation bar) do not overlap UI buttons
         ViewCompat.setOnApplyWindowInsetsListener(getWindow().getDecorView(), (view, windowInsets) -> {
             int top = windowInsets.getInsets(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout()).top;
-            int bottom = windowInsets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+            int navBottom = windowInsets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+            // Khi bàn phím hiện lên, chừa chỗ cho bàn phím để khung soạn thảo và Terminal
+            // được đẩy lên, không bị che mất con trỏ (inset của bàn phím đã gồm cả thanh điều hướng)
+            int imeBottom = windowInsets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
+            int bottom = Math.max(navBottom, imeBottom);
             view.setPadding(0, top, 0, bottom);
             return windowInsets;
         });
@@ -181,3 +185,4 @@ public class MainActivity extends BridgeActivity {
         registerBridgeInterface();
     }
 }
+
